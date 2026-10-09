@@ -1,5 +1,5 @@
 [package]
-name = "FD_Bank"
+name = "XnkRs"
 description = ""
 version = "0.1.0"
 edition = "2024"
@@ -11,3 +11,13 @@ axum = "0.8.9"
 reqwest = "0.13.5"
 tower = "0.5.3"
 tokio = { version = "1.0" , features = ["full"]}
+validator = { version = "0.20", features = ["derive"] }
+tonic = "0.14.6"
+prost = "0.14.4"
+chrono = { version = "0.4", features = ["serde"] }
+serde = { version = "1" , features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+uuid = { version = "1.0" , features = ["v4","v7","serde"]}
+supabase-client-sdk = { version = "0.1", features = ["auth", "storage", "realtime"] }
+phonenumber = "0.3.10"
