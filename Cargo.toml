@@ -1,0 +1,13 @@
+[package]
+name = "FD_Bank"
+description = ""
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+license-file = "LICENSE"
+
+[dependencies]
+axum = "0.8.9"
+reqwest = "0.13.5"
+tower = "0.5.3"
+tokio = { version = "1.0" , features = ["full"]}
