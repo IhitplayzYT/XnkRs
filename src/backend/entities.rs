@@ -1,7 +1,7 @@
 pub mod Entities{
 use chrono::{DateTime, NaiveDateTime, Utc};
 use serde::{Deserialize, Serialize};
-use uuid::{Uuid, timestamp::UUID_TICKS_BETWEEN_EPOCHS};
+use uuid::Uuid;
 use validator::{Validate,ValidationError};
 
     #[derive(Debug,Serialize,Deserialize,Validate)]
@@ -45,6 +45,8 @@ use validator::{Validate,ValidationError};
         pub fn set_phone_no(&mut self,phone:String) {self.phone = phone;}
     }
 
+
+    /// Audit Fields for Structures
     #[derive(Debug,Deserialize,Serialize)]
     pub struct Audit{
         pub uid: Uuid,
@@ -89,6 +91,7 @@ use validator::{Validate,ValidationError};
         user_metadata: UserMetaData,
         audit_fields: Audit,
         customer_type: Customer_t,
+        balance: AccountBalance,
         relationships: Vec<Relationship>
     }
 
@@ -100,15 +103,17 @@ use validator::{Validate,ValidationError};
         ///     is_customer: bool = Uuid generation changes based on if user is customer or not
         ///     ldbid: Option<Uuid> = Uuid of logical database where customer to be storred else a new one is generated
         ///     ws_id: Option<Uuid> = Uuid of workspace from where customer creation request is sent from else a new one is generated
-        pub fn new(email:String,phone: String,is_customer: bool,ldbid: Option<Uuid>,ws_id: Option<Uuid>) -> Self{
+        pub fn new(email:String,phone: String,is_customer: bool,ldbid: Option<Uuid>,ws_id: Option<Uuid>,money: Money) -> Self{
             let user = User::new(email, phone, is_customer);
             let (uuid,ldbid,ws_id) = (user.get_id(),ldbid.unwrap_or(Uuid::new_v4()),ws_id.unwrap_or(Uuid::new_v4()));
-            Self { user,user_metadata: UserMetaData::default() , audit_fields:Audit::new(uuid, ldbid, ws_id),customer_type: Customer_t::Normal,relationships:vec![]}   
+            let mut balance = AccountBalance::new(Some(money.currency));
+            balance.available = money;
+            Self { user,user_metadata: UserMetaData::default() , audit_fields:Audit::new(uuid, ldbid, ws_id),customer_type: Customer_t::Normal,relationships:vec![],balance}   
         }
 
         /// Create new user from the individual components if present
-        pub fn new_from(user: User,user_metadata: UserMetaData,audit_fields: Audit,customer_type: Customer_t) -> Self{
-            Self { user, user_metadata, audit_fields,customer_type,relationships:vec![]}
+        pub fn new_from(user: User,user_metadata: UserMetaData,audit_fields: Audit,customer_type: Customer_t,balance:AccountBalance) -> Self{
+            Self { user, user_metadata, audit_fields,customer_type,relationships:vec![],balance}
         }
     }
 
@@ -116,7 +121,7 @@ use validator::{Validate,ValidationError};
 
     /// Validate international phone number standards
     /// v2 api used Internally to validate phone numbers
-    fn validate_phone_no_v2(phone: &str) -> Result<(), ValidationError> {
+    pub fn validate_phone_no_v2(phone: &str) -> Result<(), ValidationError> {
         match phonenumber::parse(None, phone) {
             Ok(number) if phonenumber::is_valid(&number) => Ok(()),
             _ => Err(ValidationError::new("invalid_phone_number")),
@@ -128,7 +133,7 @@ use validator::{Validate,ValidationError};
     #[deprecated]
     /// Internal validation function to validate phone numbers
     /// v1 supporting simple logic
-    fn validate_phone_no_v1(phone: &str) -> Result<(),ValidationError>{
+    pub fn validate_phone_no_v1(phone: &str) -> Result<(),ValidationError>{
         let phone = if phone.starts_with("+") {phone.strip_prefix("+").unwrap()}else{phone};
         if let Some(z) = phone.find("-"){
             let (country_code,phone_no) = phone.split_at(z);
@@ -187,7 +192,6 @@ use validator::{Validate,ValidationError};
     }
 
     impl Product{
-
         /// Created a new product
         /// Args:
         ///     product_category_id: Uuid  = The general topmost category of the product
@@ -202,10 +206,10 @@ use validator::{Validate,ValidationError};
 
 
     pub enum Product_t{
-        Account,
-        Loan,
-        FD,
-        Forex
+        Account(Account),
+        Loan(Loan),
+        FD(FD),
+        Forex(Forex)
     }
 
     #[derive(Debug,Clone, Copy,Deserialize,Serialize)]
@@ -216,6 +220,214 @@ use validator::{Validate,ValidationError};
         NonFrequentUser
     }
 
+    #[derive(Debug,Serialize,Deserialize)]
+    pub struct Account{
+        account_id: Uuid,
+        customer: Customer,
+        acc_type: Account_T,
+        product_conf: ProductConfig
+    }
 
+
+    #[derive(Debug,Clone, Copy,Serialize,Deserialize)]
+    pub enum Account_T{
+        Savings,
+        Current,
+        Checking,
+        Deposit,
+    }
+
+    #[derive(Debug,Clone, Copy,Serialize,Deserialize)]
+    pub enum ProductConfig{
+        Account{min_balance: Money,pricing: Money},
+        Loan{amount: Money, tenure: i64, interest:f32},
+        FD{amount: Money, tenure: i64, interest:f32},
+        Forex{amt: Money,to_convert: Currency}
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    pub struct AccountBalance {
+        /// Posted balance according to the account ledger.
+        pub booked: Money,
+        /// Amount currently available for spending or withdrawal.
+        pub available: Money,
+        /// Funds reserved for pending transactions or authorizations.
+        pub held: Money,
+        /// Pending credits/debits, tracked separately from posted entries.
+        pub pending: Money,
+        pub as_of: DateTime<Utc>,
+    }
+
+    impl AccountBalance{
+        pub fn new(curr: Option<Currency>) -> AccountBalance{
+            let curr = curr.unwrap_or_default();
+            Self { booked: Money::new(0, curr), available: Money::new(0, curr), held: Money::new(0,curr), pending: Money::new(0, curr), as_of: Utc::now() }
+        }
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+    pub enum Currency {
+        INR, // 2 dp
+        USD, // 2 dp
+        JPY, // 0 dp
+        BTC, // 9 dp
+        KWD  // 3 dp
+    }
+
+    impl Default for Currency{
+        fn default() -> Self {
+            Self::INR
+        }
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+    pub struct Money {
+        pub units: i64,
+        pub currency: Currency,
+    }
+
+    impl Money{
+        pub fn new(units: i64,currency: Currency) -> Self{  
+            Self { units, currency }
+        }
+    }
+
+    impl Default for Money{
+        fn default() -> Self {
+            Self { units: 0, currency: Currency::INR }
+        }
+    }
+
+
+    #[derive(Debug,Serialize,Deserialize)]
+    pub struct Loan{
+        pub loan_id: Uuid,
+        pub customer_id: Uuid,
+        pub amount: Money,
+        pub tenure_months: i64,
+        pub interest_rate: f32,
+        pub emi: Money,
+        pub outstanding_principal: Money,
+        pub status: LoanStatus,
+        pub start_date: DateTime<Utc>,
+        pub end_date: DateTime<Utc>,
+        pub next_emi_date: DateTime<Utc>,
+    }
+
+    impl Loan{
+        pub fn new(customer_id: Uuid, config: &ProductConfig) -> Self{
+            if let ProductConfig::Loan{amount, tenure, interest} = config{
+                let start_date = Utc::now();
+                let end_date = start_date + chrono::Duration::days(*tenure * 30);
+                let monthly_interest = interest / 100.0 / 12.0;  // Compounding period per month
+                let emi_amount = (amount.units as f64 * monthly_interest as f64 * (1.0 + monthly_interest as f64).powi(*tenure as i32)) / ((1.0 + monthly_interest as f64).powi(*tenure as i32) - 1.0);
+                Self {loan_id: Uuid::now_v7(),customer_id,amount: *amount,tenure_months: *tenure,interest_rate: *interest,emi: Money::new(emi_amount as i64, amount.currency),outstanding_principal: *amount,status: LoanStatus::Active,start_date,end_date,next_emi_date: start_date + chrono::Duration::days(30)}
+            } else {
+                panic!("Invalid ProductConfig for Loan")
+            }
+        }
+        
+        /// Expected converted payment
+        pub fn pay_emi(&mut self, payment: Money) -> Result<(), String>{
+            if payment.units >= self.emi.units{
+                self.outstanding_principal.units -= payment.units;
+                self.next_emi_date = self.next_emi_date + chrono::Duration::days(30);
+                if self.outstanding_principal.units <= 0{ self.status = LoanStatus::Paid; }
+                Ok(())
+            } else {
+                Err("Payment amount is less than EMI".to_string())
+            }
+        }
+    }
+
+    #[derive(Debug,Clone, Copy,Serialize,Deserialize)]
+    pub enum LoanStatus{
+        Active,
+        Paid,
+        Defaulted,
+        Closed,
+    }
+
+    #[derive(Debug,Serialize,Deserialize)]
+    pub struct FD{
+        pub fd_id: Uuid,
+        pub customer_id: Uuid,
+        pub principal: Money,
+        pub tenure_months: i64,
+        pub interest_rate: f32,
+        pub maturity_amount: Money,
+        pub status: FDStatus,
+        pub start_date: DateTime<Utc>,
+        pub maturity_date: DateTime<Utc>,
+        pub is_auto_renew: bool,
+    }
+
+    impl FD{
+        pub fn new(customer_id: Uuid, config: &ProductConfig, auto_renew: bool) -> Self{
+            if let ProductConfig::FD{amount, tenure, interest} = config{
+                let start_date = Utc::now();
+                let maturity_date = start_date + chrono::Duration::days(*tenure * 30);
+                let maturity_amount_units = amount.units as f64 * (1.0 + (*interest as f64  / 100.0) * (*tenure as f64 / 12.0));
+                Self {fd_id: Uuid::now_v7(),customer_id,principal: *amount,tenure_months: *tenure,interest_rate: *interest,maturity_amount: Money::new(maturity_amount_units as i64, amount.currency),status: FDStatus::Active,start_date,maturity_date,is_auto_renew: auto_renew}
+            } else {
+                panic!("Invalid ProductConfig for FD")
+            }
+        }
+
+        pub fn mature(&mut self){ self.status = FDStatus::Matured; }
+
+        pub fn withdraw(&mut self) -> Result<Money, String>{
+            match self.status{
+                FDStatus::Matured => {
+                    self.status = FDStatus::Withdrawn;
+                    Ok(self.maturity_amount)
+                },
+                FDStatus::Active => Err("FD has not matured yet".to_string()),
+                FDStatus::Withdrawn => Err("FD already withdrawn".to_string()),
+                FDStatus::Closed => Err("FD is closed".to_string()),
+            }
+        }
+    }
+
+    #[derive(Debug,Clone, Copy,Serialize,Deserialize)]
+    pub enum FDStatus{
+        Active,
+        Matured,
+        Withdrawn,
+        Closed,
+    }
+
+    #[derive(Debug,Serialize,Deserialize)]
+    pub struct Forex{
+        pub forex_id: Uuid,
+        pub customer_id: Uuid,
+        pub from_amount: Money,
+        pub to_currency: Currency,
+        pub to_amount: Money,
+        pub exchange_rate: f64,
+        pub status: ForexStatus,
+        pub transaction_date: DateTime<Utc>,
+    }
+
+    impl Forex{
+        pub fn new(customer_id: Uuid, config: &ProductConfig, exchange_rate: f64) -> Self{
+            if let ProductConfig::Forex{amt, to_convert} = config{
+                let to_amount_units = (amt.units as f64 * exchange_rate) as i64;
+                Self {forex_id: Uuid::now_v7(),customer_id,from_amount: *amt,to_currency: *to_convert,to_amount: Money::new(to_amount_units, *to_convert),exchange_rate,status: ForexStatus::Pending,transaction_date: Utc::now()}
+            } else {
+                panic!("Invalid ProductConfig for Forex")
+            }
+        }
+        pub fn complete(&mut self){ self.status = ForexStatus::Completed; }
+        pub fn cancel(&mut self){ self.status = ForexStatus::Cancelled; }
+    }
+
+    #[derive(Debug,Clone, Copy,Serialize,Deserialize)]
+    pub enum ForexStatus{
+        Pending,
+        Completed,
+        Cancelled,
+        Failed,
+    }
 
 }

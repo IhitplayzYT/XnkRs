@@ -1,13 +1,58 @@
 pub mod Endpoints{
-    
+
+    pub struct UrlGetter{
+        pub version: String,
+    }
+
+    impl UrlGetter{
+        pub fn new(version: Option<String>) -> Self{
+            Self { version: version.unwrap_or("".to_string()) }
+        }
+        
+        pub fn normalize(&self,url: &str) -> String{
+            format!("/{}/{}",self.version,url)
+        }
+    }
+
+
     /// Login page endpoint
     pub const LOGIN: &str = "/login";
+
+    /// Login out endpoint
+    pub const LOGOUT: &str = "/logout";
 
     /// Signup page endpoint
     pub const SIGNUP: &str = "/signup";
     
     /// Reset acc/alt acc endpoint
     pub const FORGOT_PASS: &str = "/reset";
+
+    /// Refresh token endpoint
+    pub const REFRESH_TOKEN: &str = "/refresh";
+
+    /// Verify session endpoint
+    pub const VERIFY_SESSION: &str = "/verify";
+
+    /// Revoke session endpoint
+    pub const REVOKE_SESSION: &str = "/revoke";
+
+    /// Get user profile endpoint
+    pub const PROFILE: &str = "/profile";
+
+    /// Update profile endpoint
+    pub const UPDATE_PROFILE: &str = "/profile/update";
+
+    /// Change password endpoint
+    pub const CHANGE_PASSWORD: &str = "/change-password";
+
+    /// 2FA verify endpoint
+    pub const VERIFY_2FA: &str = "/verify-2fa";
+
+    /// Enable 2FA endpoint
+    pub const ENABLE_2FA: &str = "/enable-2fa";
+
+    /// Disable 2FA endpoint
+    pub const DISABLE_2FA: &str = "/disable-2fa";
 
     /// Customer home endpoint
     pub const HOME: &str = "/home";
